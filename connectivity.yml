@@ -1,0 +1,56 @@
+
+- hosts: all
+
+  gather_facts: no
+  vars:
+    ping_inconsistency: []
+    index: []
+  tasks:
+
+  - name: Include vars
+    include_vars:
+      file: "{{ dir }}/yaml/{{ inventory_hostname }}_{{ item }}.state"
+      name: "{{ item }}"
+    loop: "{{ hostvars[inventory_hostname].vdoms.split(',') }}"
+
+
+  - name: Build index
+    set_fact:
+      index: "{{ index + ( [ item ]|product(hostvars[inventory_hostname][item]['nexthops'])|list )}}"
+    loop: "{{ hostvars[inventory_hostname].vdoms.split(',') }}"
+
+  - debug:
+      msg: "{{ index }}"
+
+
+  - name: "Ping hosts"
+    delegate_to: localhost
+    fortiosconfig:
+      action: "ssh"
+      host:  "{{  host }}"
+      username: "{{  username }}"
+      password: "{{ password }}"
+      https: True
+      commands: |
+               {% if vdom_mode %}
+               config vdom
+               edit {{ item.0 }}
+               {% endif %}
+               execute ping {{ item.1 }}
+
+    register: ping_results
+    loop: "{{ index }}"
+
+  - debug:
+      msg: "{{ ping_results }}"
+
+  - name: "Check if pings where ok"
+    set_fact:
+      ping_inconsistency: "{{ ping_inconsistency + [ inventory_hostname + ': packet loss pinging ' + item.item.1 + ' from ' + item.item.0 ]}}"
+    when: '" 0% packet loss" not in item.meta.out'
+    loop: "{{ ping_results.results }}"
+    ignore_errors: yes
+
+  - name: Analyze and print result
+    debug:
+       msg: "{{ 'Connectivity ok' if (ping_inconsistency | length) == 0 else ping_inconsistency}}"

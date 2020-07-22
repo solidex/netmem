@@ -1,0 +1,8 @@
+vars/
+work/
+raw_data/
+out/
+*.conf
+*.log
+__pycache__
+*.pyc
